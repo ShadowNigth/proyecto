@@ -579,17 +579,21 @@ def convert_viewmodel(src, dst, ratio=0.32, keep_names=None, fps=30.0, tex=640, 
             except Exception:
                 img = None
         if img is None and im.get('uri'):
-            # The CS:GO knife viewmodels reference some maps as sibling files. The bank does
-            # not ship the '../../textures/cs2_catalog/*' paths they point at, so fall back to
-            # the textures the exporter wrote next to the GLB (<model>_3/_4/_5.png = albedo /
-            # normal / orm, in material slot order).
+            # The knife viewmodels reference their maps by relative URI. They are written
+            # against a '../../textures/...' layout that does not match the source tree, so
+            # try the URI as given, then the source root, then the cs2_catalog folder.
             src_dir = os.path.dirname(os.path.abspath(src))
-            stem = os.path.basename(src)[:-4]
-            cand = os.path.normpath(os.path.join(src_dir, im['uri']))
-            if not os.path.exists(cand):
-                side = os.path.join(src_dir, '%s_%d.png' % (stem, ii))
-                cand = side if os.path.exists(side) else cand
-            if os.path.exists(cand):
+            uri = im['uri'].replace('\\', '/')
+            root = os.path.dirname(src_dir)                    # <repo>/weapons -> <repo>
+            cands = [os.path.normpath(os.path.join(src_dir, uri)),
+                     os.path.normpath(os.path.join(root, uri.lstrip('./'))),
+                     os.path.join(root, 'textures', 'cs2_catalog', os.path.basename(uri))]
+            cand = next((c for c in cands if os.path.exists(c)), None)
+            if cand is None:
+                # last resort: the exporter may have dropped the map next to the GLB
+                side = os.path.join(src_dir, '%s_%d.png' % (os.path.basename(src)[:-4], ii))
+                cand = side if os.path.exists(side) else None
+            if cand is not None:
                 try:
                     img = Image.open(cand).convert('RGB')
                 except Exception:
