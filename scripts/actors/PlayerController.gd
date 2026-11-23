@@ -52,6 +52,12 @@ var _spec_free_orbit_timer: float = 0.0
 var _deathcam_timer: float = 0.0
 var _deathcam_killer: Node3D = null
 var _elite_muzzle_left: bool = false
+var _vm_inspecting: bool = false
+var _inspect_stage: int = 0
+var _inspect_cooldown: float = 0.0
+var _inspect_last_time: float = -99.0
+var _inspect_axis: Vector3 = Vector3(0, 1, 0)
+var _cur_vm_centre: Vector3 = Vector3.ZERO
 var _defusing_c4: PlantedC4 = null
 var _spec_index: int = 0
 var ui_blocking_input: bool = false
@@ -242,6 +248,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		buy_ammo_for_slot(1, false)
 	elif event.is_action_pressed("buy_ammo2"):
 		buy_ammo_for_slot(2, false)
+	elif event.is_action_pressed("inspect"):
+		try_inspect_weapon()
 	elif event.is_action_pressed("flashlight"):
 		flashlight_spot.visible = not flashlight_spot.visible
 		AudioManager.play_3d("items/nvg_off.wav", global_position, -6.0, 12.0, 1.35)
@@ -347,6 +355,24 @@ func _process(delta: float) -> void:
 		-_sway_offset.x * 1.05,
 		strafe_roll
 	)
+	# --- weapon inspection turntable (CS:GO 'look at weapon'): rolls the gun towards the camera
+	if _inspect_cooldown > 0.0:
+		_inspect_cooldown -= delta
+		if _inspect_cooldown <= 0.0 and _vm_inspecting:
+			_vm_inspecting = false
+			_play_idle_viewmodel()
+	var iw := _vm_inspect_weight()
+	if iw > 0.001:
+		# the turntable pivots around the weapon's own centre, not the hands'
+		var vm_centre := _viewmodel_centre()
+		viewmodel_holder.position += vm_centre * iw
+		var yaw := iw * 2.05
+		var pitch := iw * 0.34
+		viewmodel_holder.basis = (viewmodel_holder.basis
+			* Basis(Vector3.RIGHT, pitch)
+			* Basis(Vector3.UP, yaw)
+			* Basis(Vector3(0.0, 0.0, 1.0), iw * 0.42))
+		viewmodel_holder.position += (Vector3(-0.030, -0.026, 0.046) - vm_centre) * iw
 	if _vm_container:
 		_vm_container.pivot_offset = _vm_container.size * 0.5
 		_vm_container.scale = Vector2(1.0 if GameData.right_hand else -1.0, 1.0)
@@ -492,6 +518,9 @@ func _rebuild_viewmodel(wid: String) -> void:
 	_pending_vm_events.clear()
 	_vm_anim_elapsed = 0.0
 	_elite_muzzle_left = false
+	_vm_inspecting = false
+	_inspect_stage = 0
+	_cur_vm_centre = Vector3.ZERO
 	var spec: Dictionary = GameData.weapons.get(wid, {})
 	var v_name := String(spec.get("v_model", "v_knife"))
 	_cur_vm_model_name = v_name
@@ -499,11 +528,12 @@ func _rebuild_viewmodel(wid: String) -> void:
 	var sc := GameData.get_model_scene("weapons/" + v_name)
 	if not sc:
 		return
-	var inst := sc.instantiate()
+	var inst := sc.instantiate() as Node3D
 	# Native GoldSrc camera-space framing (verified across rifles, pistols, knife, grenades & C4)
 	inst.position = Vector3(0.0, -0.015, -0.03)
 	_prepare_viewmodel_materials(inst)
 	viewmodel_holder.add_child(inst)
+	_cache_viewmodel_centre(inst)
 	_vm_anim = _find_anim(inst)
 	if _vm_anim:
 		for aname in _vm_anim.get_animation_list():
@@ -607,16 +637,159 @@ func _on_vm_anim_finished(anim_name: String) -> void:
 	_play_idle_viewmodel()
 
 
+# ---------------------------------------------------------------------------------------------
+#  Weapon inspection (CS:GO / CS2 style "look at weapon"):  I  key
+#  - plays the bank's native inspect clip when the viewmodel has one (CS2 'lookat' sequences
+#    already rotate the gun around every axis and play their own handling foley)
+#  - otherwise synthesises the classic turntable on the viewmodel holder: yaw -> roll -> pitch
+#  - repeated presses inside INSPECT_COMBO_WINDOW walk the inspect stages (inspect, inspect_2)
+# ---------------------------------------------------------------------------------------------
+const INSPECT_COMBO_WINDOW := 1.15
+const INSPECT_COOLDOWN := 0.45
+
+
+func can_inspect_weapon() -> bool:
+	if not is_alive or _vm_inspecting or not is_instance_valid(weapon_ctrl):
+		return false
+	if weapon_ctrl.is_reloading or weapon_ctrl.is_attaching_silencer:
+		return false
+	if weapon_ctrl.fire_cooldown > 0.0 or _vm_draw_offset > 0.0005:
+		return false
+	return _vm_anim != null
+
+
+func try_inspect_weapon() -> void:
+	if not can_inspect_weapon():
+		return
+	var now: float = float(Time.get_ticks_msec()) * 0.001
+	var spec: Dictionary = weapon_ctrl.get_current_spec()
+	var wid := String(weapon_ctrl.current_weapon_id)
+	# The C4 owns the mouse buttons while planting; never inspect it mid-plant
+	if wid == "c4" and weapon_ctrl.plant_progress > 0.0:
+		return
+	var clips: Dictionary = spec.get("clips", {})
+	var is_sil := bool(weapon_ctrl.silenced_state.get(wid, false)) and bool(spec.get("silencer", false))
+	var stage_bonus := 0
+	if now - _inspect_last_time <= INSPECT_COMBO_WINDOW:
+		_inspect_stage = (_inspect_stage + 1) % 3
+		stage_bonus = _inspect_stage
+	else:
+		_inspect_stage = 0
+	_inspect_last_time = now
+
+	_vm_inspecting = true
+	_inspect_cooldown = INSPECT_COOLDOWN
+	# Stop any pending foley from the previous clip — the inspect clip schedules its own.
+	_pending_vm_events.clear()
+	_vm_anim_elapsed = 0.0
+	var played := false
+	var cand_sets: Array = []
+	if is_sil and clips.has("inspect_silenced"):
+		cand_sets.append(clips["inspect_silenced"])
+	if clips.has("inspect"):
+		cand_sets.append(clips["inspect"])
+	cand_sets.append(["inspect", "inspect_2", "inspect_3", "lookat", "native_lookat_draw_ak"])
+	for cands in cand_sets:
+		if not (cands is Array):
+			continue
+		var list: Array = cands as Array
+		if list.is_empty():
+			continue
+		var rotated: Array = []
+		var n := list.size()
+		for i in range(n):
+			rotated.append(list[(i + stage_bonus) % n])
+		if _has_vm_clip(rotated):
+			var played_name := _start_vm_clip_first(rotated)
+			if not played_name.is_empty():
+				played = true
+				break
+	if not played:
+		# No authored look-at clip for this weapon: the procedural turntable in _process()
+		# does the rotating, so the inspect is always visible.
+		_play_idle_viewmodel()
+	_inspect_axis = Vector3(0.35, 1.0, 0.15).normalized() if bool(spec.get("grenade", false)) else Vector3(0.15, 1.0, 0.0).normalized()
+
+
+func _start_vm_clip_first(candidates: Array) -> String:
+	for c in candidates:
+		var cname := String(c)
+		var anims := _vm_anim.get_animation_list()
+		for a in anims:
+			if String(a).to_lower() == cname.to_lower():
+				_start_vm_clip(a)
+				return a
+	return ""
+
+
+func _has_vm_clip(candidates: Array) -> bool:
+	if not is_instance_valid(_vm_anim):
+		return false
+	var anims := _vm_anim.get_animation_list()
+	for c in candidates:
+		var cname := String(c).to_lower()
+		for a in anims:
+			if String(a).to_lower() == cname:
+				return true
+	return false
+
+
+func _viewmodel_centre() -> Vector3:
+	# Rough centre of the equipped viewmodel, used as the inspection pivot.
+	if _cur_vm_centre != Vector3.ZERO:
+		return _cur_vm_centre
+	return Vector3(0.05, -0.24, -0.42)
+
+
+func _cache_viewmodel_centre(inst: Node3D) -> void:
+	_cur_vm_centre = Vector3.ZERO
+	if inst == null:
+		return
+	var inv := inst.transform.affine_inverse()
+	var aabb := AABB()
+	var has := false
+	var stack: Array[Node] = [inst]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			var mi := n as MeshInstance3D
+			var local: AABB = mi.mesh.get_aabb()
+			# mesh AABB is in bind (rest) space, so pull it through the mesh node and then
+			# back into the viewmodel root's space, mirroring inst.position
+			var m: AABB = (inv * (mi.transform * local))
+			if has:
+				aabb = aabb.merge(m)
+			else:
+				aabb = m
+				has = true
+		for c in n.get_children():
+			stack.append(c)
+	if has and aabb.size.length_squared() > 0.000001:
+		_cur_vm_centre = aabb.get_center()
+
+
+func _vm_inspect_weight() -> float:
+	# 0..1 bell curve over the inspect window, so the turntable eases in, holds, and returns.
+	if not _vm_inspecting:
+		return 0.0
+	var t: float = 1.0 - clampf(_inspect_cooldown / INSPECT_COOLDOWN, 0.0, 1.0)
+	return smoothstep(0.0, 0.22, t) * (1.0 - smoothstep(0.74, 1.0, t))
+
+
 func _play_idle_viewmodel() -> void:
 	if not _vm_anim:
 		return
 	var wid := weapon_ctrl.current_weapon_id
 	var spec: Dictionary = GameData.weapons.get(wid, {})
 	var is_sil := bool(weapon_ctrl.silenced_state.get(wid, false)) and bool(spec.get("silencer", false))
-	if bool(spec.get("silencer", false)) and not is_sil:
-		play_viewmodel_sequence(["idle_unsil", "idle", "idle1"])
-	else:
+	# The imported CS2 viewmodels have no authored looping 'idle' pose (CS2 holds the last
+	# frame of the draw/hold clip instead). Keep the current pose and let the procedural
+	# sway/bob in _process() provide the motion -- never let the skeleton reset to bind pose.
+	if is_sil and _has_vm_clip(["idle_unsil", "idle1", "idle3"]):
+		play_viewmodel_sequence(["idle_unsil", "idle1", "idle3"])
+	elif _has_vm_clip(["idle", "idle1", "idle3"]):
 		play_viewmodel_sequence(["idle", "idle1", "idle3"])
+	# else: hold.
 
 
 func _on_fired_shot(wid: String, silenced: bool) -> void:
@@ -672,7 +845,7 @@ func _on_fired_shot(wid: String, silenced: bool) -> void:
 		else:
 			play_viewmodel_sequence(["shoot%d" % s_idx, "shoot1", "shoot", "shoot_2"])
 
-	if wid != "knife" and not bool(spec.get("grenade", false)) and wid != "c4":
+	if not weapon_ctrl.is_knife(wid) and not bool(spec.get("grenade", false)) and wid != "c4":
 		var muz_x: float = -0.16 if _elite_muzzle_left else 0.18
 		var is_rifle_w: bool = int(spec.get("slot", 1)) == 1
 		if viewmodel_pivot != null:

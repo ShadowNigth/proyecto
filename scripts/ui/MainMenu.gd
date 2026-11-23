@@ -663,6 +663,7 @@ func _build_options_dialog() -> void:
 		"• B: Buy Menu (supports hotkeys e.g. B-4-1 AK47, B-4-3 M4A1, B-8-2 Kevlar+Helmet)\n" +
 		"• , (Comma) / . (Period): Buy Primary / Secondary Ammo\n" +
 		"• E: Defuse C4 / Rescue Hostage / Open Door   |   F: Flashlight   |   N: Nightvision\n" +
+		"• I: Inspect Weapon (press again to cycle the look-at stages)\n" +
 		"• M: Change Team   |   Z / X / C: Radio Commands   |   Tab: Scoreboard   |   Esc: Menu"
 	)
 	content.add_child(keys_lbl)

@@ -160,6 +160,7 @@ func _show_category(cat: int) -> void:
 			[6, "Primary Ammo (Full)", func(): _buy_ammo_and_close(1)],
 			[7, "Secondary Ammo (Full)", func(): _buy_ammo_and_close(2)],
 			[8, "Equipment (Kevlar / Grenades / Kit)", func(): _show_category(8)],
+			[9, "Knife Skins (Slot 3)", func(): _show_category(9)],
 		]
 		for rc in root_cats:
 			_add_entry_button(int(rc[0]), String(rc[1]), -1, true, rc[2], "", "")
@@ -220,6 +221,38 @@ func _show_category(cat: int) -> void:
 					String(gs.get("description", ""))
 				)
 
+	elif cat == 9:
+		_title_lbl.text = "KNIFE SKINS"
+		var owned: String = player.weapon_ctrl.knife_id()
+		var knives: Array = []
+		for wid3 in GameData.weapons.keys():
+			if player.weapon_ctrl.is_knife(String(wid3)):
+				knives.append(GameData.weapons[wid3])
+		knives.sort_custom(func(a, b):
+			var an := String(a.get("name", ""))
+			var bn := String(b.get("name", ""))
+			if String(a.get("id", "")) == "knife":
+				return true
+			if String(b.get("id", "")) == "knife":
+				return false
+			return an < bn
+		)
+		for spec3 in knives:
+			var kid := String(spec3.get("id", ""))
+			var owned_lbl := String(spec3.get("name", kid))
+			if kid == owned:
+				owned_lbl += "   [EQUIPPED]"
+			# knife skins are free in this build: the card shows "EQUIP", never a price
+			_add_entry_button(
+				-1,
+				owned_lbl,
+				-1,
+				true,
+				func(): _equip_knife(kid),
+				String(spec3.get("vgui", "")),
+				String(spec3.get("description", ""))
+			)
+
 	_add_entry_button(0, "Cancel / Back" if cat > 0 else "Exit", -1, true, func():
 		if cat > 0:
 			_show_category(0)
@@ -244,6 +277,16 @@ func _add_entry_button(num: int, label: String, price: int, affordable: bool, cb
 	)
 	_items_vbox.add_child(btn)
 	_current_entries.append({"num": num, "action": cb})
+
+
+func _equip_knife(kid: String) -> void:
+	if not is_instance_valid(player):
+		return
+	if player.weapon_ctrl.set_knife_skin(kid):
+		AudioManager.play_ui("launch_glow1.wav")
+		_show_category(9)  # keep the picker open so the player can compare blades
+	else:
+		AudioManager.play_ui("launch_deny2.wav")
 
 
 func _purchase_weapon(wid: String) -> void:

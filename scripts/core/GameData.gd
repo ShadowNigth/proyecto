@@ -127,21 +127,29 @@ func get_styled_model_material(orig: Material, mode: String) -> Material:
 	dup.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	dup.roughness = 0.92
 	dup.metallic = 0.0
+	# Respect the material's own culling: the imported CS2 viewmodels mark several surfaces
+	# (arms, gloves, scopes) as doubleSided, and forcing CULL_BACK makes those faces vanish,
+	# which reads as "missing texture" in game.
+	var shell_cull := dup.cull_mode
+	if dup.cull_mode == BaseMaterial3D.CULL_DISABLED:
+		shell_cull = BaseMaterial3D.CULL_DISABLED
+	else:
+		shell_cull = BaseMaterial3D.CULL_BACK
 	if mode == "vm":
-		dup.cull_mode = BaseMaterial3D.CULL_BACK
+		dup.cull_mode = shell_cull
 		dup.albedo_color = Color(1.38, 1.38, 1.38, 1.0)
 	elif mode == "vm_flip":
 		dup.cull_mode = BaseMaterial3D.CULL_FRONT
 		dup.albedo_color = Color(1.38, 1.38, 1.38, 1.0)
 	elif mode == "w_drop":
-		dup.cull_mode = BaseMaterial3D.CULL_BACK
+		dup.cull_mode = shell_cull
 		dup.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 		dup.roughness = 0.44
 		dup.metallic = 0.24
 		dup.metallic_specular = 0.64
 		dup.albedo_color = Color(1.25, 1.25, 1.27, 1.0)
 	else:
-		dup.cull_mode = BaseMaterial3D.CULL_BACK
+		dup.cull_mode = shell_cull
 		dup.albedo_color = Color(1.36, 1.36, 1.38, 1.0)
 	_styled_mat_cache[key] = dup
 	return dup
@@ -463,6 +471,7 @@ func _ensure_input_map() -> void:
 		"buy_ammo2": [KEY_PERIOD],
 		"team_menu": [KEY_M],
 		"last_weapon": [KEY_Q],
+		"inspect": [KEY_I],
 		"flashlight": [KEY_F],
 		"nightvision": [KEY_N],
 		"scoreboard": [KEY_TAB],

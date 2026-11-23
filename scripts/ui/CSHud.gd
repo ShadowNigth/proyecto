@@ -1175,6 +1175,16 @@ func _killfeed_weapon_icon(wid: String) -> Texture2D:
 	var tex := GameData.get_hud_atlas(entry, 320) as Texture2D
 	if tex == null and wid == "smokegrenade":
 		tex = GameData.get_hud_atlas("d_grenade", 320)
+	# Every imported knife skin reports the generic CS 1.5 dagger sprite in the killfeed
+	# (and any weapon missing a d_* sprite falls back to its HUD weapon icon).
+	if tex == null and wid.begins_with("knife"):
+		tex = GameData.get_hud_atlas("d_knife", 320) as Texture2D
+	if tex == null:
+		var wh := GameData.get_weapon_hud_atlas(wid, "weapon_640")
+		if wh == null:
+			wh = GameData.get_weapon_hud_atlas(wid, "weapon_320")
+		if wh != null:
+			tex = wh
 	return tex
 
 

@@ -242,19 +242,19 @@ func _get_weapon_anim_ext(wid: String) -> String:
 	match wid:
 		"ak47":
 			return "ak47"
-		"m4a1", "aug", "sg552", "ump45", "tmp":
+		"m4a1", "aug", "sg552", "ump45", "tmp", "m4a4", "famas", "galil":
 			return "carbine"
-		"mp5navy", "mac10", "p90":
+		"mp5navy", "mac10", "p90", "mp7", "bizon":
 			return "mp5"
-		"awp", "scout", "g3sg1", "sg550":
+		"awp", "scout", "g3sg1", "sg550", "revolver":
 			return "rifle"
-		"m3", "xm1014":
+		"m3", "xm1014", "mag7", "sawedoff":
 			return "shotgun"
-		"m249":
+		"m249", "negev":
 			return "m249"
 		"elite":
 			return "dualpistols"
-		"usp", "glock18", "deagle", "p228", "fiveseven":
+		"usp", "glock18", "deagle", "p228", "fiveseven", "p2000", "cz75", "tec9":
 			return "onehanded"
 		"knife":
 			return "knife"
@@ -269,6 +269,8 @@ func trigger_upper_body_action(action_kind: String) -> void:
 	if not is_alive or _anim_res_map.is_empty():
 		return
 	var wid := weapon_ctrl.current_weapon_id if weapon_ctrl else "usp"
+	if weapon_ctrl != null and weapon_ctrl.is_knife(wid):
+		wid = "knife"
 	var ext := _get_weapon_anim_ext(wid)
 	var pref := "crouch_" if is_crouching else "ref_"
 
@@ -283,7 +285,7 @@ func trigger_upper_body_action(action_kind: String) -> void:
 			var wspec: Dictionary = GameData.weapons.get(wid, {})
 			var rec_u: float = float(wspec.get("recoil_up", 1.5))
 			_tp_recoil_pitch = clampf(_tp_recoil_pitch + deg_to_rad(1.4 + rec_u * 1.15), 0.0, deg_to_rad(9.5))
-			if _tp_muzzle_sprite and wid not in ["knife", "hegrenade", "flashbang", "smokegrenade", "c4"]:
+			if _tp_muzzle_sprite and not (weapon_ctrl != null and weapon_ctrl.is_knife(wid)) and wid not in ["hegrenade", "flashbang", "smokegrenade", "c4"]:
 				var is_sil := weapon_ctrl != null and bool(weapon_ctrl.silenced_state.get(wid, false))
 				var is_rifle_w: bool = int(wspec.get("slot", 1)) == 1
 				if not is_human and is_instance_valid(RoundManager.game_world):
@@ -518,6 +520,8 @@ func _evaluate_character_pose(delta: float) -> void:
 
 	# 3. Smoothly blended upper-body weapon aim posture (stand <-> crouch) + crossfaded shoot/reload/flinch!
 	var wid := weapon_ctrl.current_weapon_id if weapon_ctrl else "usp"
+	if weapon_ctrl != null and weapon_ctrl.is_knife(wid):
+		wid = "knife"
 	var ext := _get_weapon_anim_ext(wid)
 	var stand_aim_key := "ref_aim_" + ext
 	if not _anim_res_map.has(stand_aim_key):

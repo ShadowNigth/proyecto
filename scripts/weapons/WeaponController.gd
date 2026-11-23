@@ -19,7 +19,7 @@ var last_weapon_id: String = "knife"
 
 # Per-weapon state stored on the actor's inventory:
 # slots[1] = primary_id or "", slots[2] = secondary_id or "", slots[3] = "knife", slots[5] = "c4" or ""
-var slots: Dictionary = {1: "", 2: "", 3: "knife", 5: ""}
+var slots: Dictionary = {1: "", 2: "", 3: "knife", 5: ""}  # slot 3 follows knife_skin
 var grenades: Dictionary = {"hegrenade": 0, "flashbang": 0, "smokegrenade": 0}
 var current_grenade_id: String = ""
 var clips: Dictionary = {}
@@ -46,6 +46,9 @@ var _grenade_want_release: bool = false
 var _grenade_lob_mode: bool = false
 var _post_throw_switch_timer: float = 0.0
 var _knife_combo_idx: int = 0
+## Which knife skin (any "knife_*" weapon id) the player carries in slot 3.  "knife" is the
+## default GoldSrc knife; every other id is one of the 23 CS:GO finishes imported from the bank.
+var knife_skin: String = "knife"
 
 # View punch recoil angles (degrees: x=pitch up, y=yaw side)
 var punch_angles: Vector2 = Vector2.ZERO
@@ -55,8 +58,34 @@ func setup_for_actor(owner_actor: CharacterBody3D) -> void:
 	actor = owner_actor
 
 
+func knife_id() -> String:
+	"""Weapon id currently carried in slot 3 (a CS:GO knife skin, or the default knife)."""
+	if not knife_skin.is_empty() and GameData.weapons.has(knife_skin):
+		return knife_skin
+	return "knife"
+
+
+func is_knife(wid: String) -> bool:
+	if wid == "knife" or wid.begins_with("knife_"):
+		return true
+	var spec: Dictionary = GameData.weapons.get(wid, {})
+	return String(spec.get("cls", "")).to_lower() == "cknife"
+
+
+func set_knife_skin(wid: String) -> bool:
+	if not GameData.weapons.has(wid) or not is_knife(wid):
+		return false
+	knife_skin = wid
+	var was_holding := is_knife(current_weapon_id)
+	slots[3] = wid
+	if was_holding:
+		current_weapon_id = wid
+		weapon_switched.emit(current_weapon_id, get_current_spec())
+	return true
+
+
 func reset_loadout(team: String, is_vip: bool = false) -> void:
-	slots = {1: "", 2: "", 3: "knife", 5: ""}
+	slots = {1: "", 2: "", 3: knife_id(), 5: ""}
 	grenades = {"hegrenade": 0, "flashbang": 0, "smokegrenade": 0}
 	clips.clear()
 	ammo_pool.clear()
@@ -73,12 +102,12 @@ func reset_loadout(team: String, is_vip: bool = false) -> void:
 
 
 func clear_all_weapons() -> void:
-	slots = {1: "", 2: "", 3: "knife", 5: ""}
+	slots = {1: "", 2: "", 3: knife_id(), 5: ""}
 	grenades = {"hegrenade": 0, "flashbang": 0, "smokegrenade": 0}
 	clips.clear()
 	ammo_pool.clear()
 	_reset_states()
-	current_weapon_id = "knife"
+	current_weapon_id = knife_id()
 
 
 func _reset_states() -> void:
@@ -347,10 +376,10 @@ func trigger_primary(holding: bool, delta: float) -> void:
 
 	if is_reloading or is_attaching_silencer or fire_cooldown > 0.0:
 		return
-	if holding and not bool(spec.get("automatic", false)) and current_weapon_id != "knife":
+	if holding and not bool(spec.get("automatic", false)) and not is_knife(current_weapon_id):
 		return
 
-	if current_weapon_id == "knife":
+	if is_knife(current_weapon_id):
 		_swing_knife(false)
 		return
 
@@ -418,7 +447,7 @@ func trigger_secondary() -> void:
 			actor.call("play_viewmodel_sequence", ["pullpin"])
 		return
 
-	if current_weapon_id == "knife":
+	if is_knife(current_weapon_id):
 		if not RoundManager.is_movement_frozen():
 			_swing_knife(true)
 		return

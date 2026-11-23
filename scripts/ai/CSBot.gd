@@ -357,7 +357,7 @@ func _physics_process(delta: float) -> void:
 				_defusing_ref = null
 			_knife_rush_timer = 0.0
 			_stealth_walk_timer = 0.0
-			if not weapon_ctrl.is_reloading and weapon_ctrl.current_weapon_id != "knife":
+			if not weapon_ctrl.is_reloading and not weapon_ctrl.is_knife(weapon_ctrl.current_weapon_id):
 				weapon_ctrl.equip_slot(3)
 			_follow_navigation_path(delta)
 			return
@@ -409,7 +409,7 @@ func _physics_process(delta: float) -> void:
 		var dis_dir := _blend_move_dir(_smoothed_move_dir, _disengage_dir, delta)
 		_smoothed_move_dir = dis_dir
 		_look_smoothly_toward(global_position + _disengage_dir * 9.0 + Vector3(0.0, 1.3, 0.0), delta * 5.5)
-		if weapon_ctrl.current_weapon_id in ["knife", "c4", "hegrenade", "flashbang", "smokegrenade"]:
+		if (weapon_ctrl.is_knife(weapon_ctrl.current_weapon_id) or weapon_ctrl.current_weapon_id in ["c4", "hegrenade", "flashbang", "smokegrenade"]):
 			if not weapon_ctrl.equip_slot(1):
 				weapon_ctrl.equip_slot(2)
 		apply_goldsrc_movement(dis_dir, false, false, false, delta)
@@ -445,9 +445,9 @@ func _physics_process(delta: float) -> void:
 	# Weapon discipline during navigation: Knife rush out of spawn, then draw Primary Rifle before contact!
 	if not weapon_ctrl.is_reloading:
 		if _knife_rush_timer > 0.0 and _sound_investigate_timer <= 0.0 and not is_vip:
-			if weapon_ctrl.current_weapon_id != "knife":
+			if not weapon_ctrl.is_knife(weapon_ctrl.current_weapon_id):
 				weapon_ctrl.equip_slot(3)
-		elif weapon_ctrl.current_weapon_id in ["knife", "c4", "hegrenade", "flashbang", "smokegrenade"]:
+		elif (weapon_ctrl.is_knife(weapon_ctrl.current_weapon_id) or weapon_ctrl.current_weapon_id in ["c4", "hegrenade", "flashbang", "smokegrenade"]):
 			if not weapon_ctrl.equip_slot(1):
 				weapon_ctrl.equip_slot(2)
 
@@ -462,7 +462,7 @@ func _execute_camp_behavior(delta: float) -> void:
 		_release_camp_spot()
 		return
 
-	if not weapon_ctrl.is_reloading and weapon_ctrl.current_weapon_id in ["knife", "c4", "hegrenade", "flashbang", "smokegrenade"]:
+	if not weapon_ctrl.is_reloading and (weapon_ctrl.is_knife(weapon_ctrl.current_weapon_id) or weapon_ctrl.current_weapon_id in ["c4", "hegrenade", "flashbang", "smokegrenade"]):
 		if not weapon_ctrl.equip_slot(1):
 			weapon_ctrl.equip_slot(2)
 
@@ -593,7 +593,7 @@ func _engage_enemy(delta: float) -> void:
 				return
 
 	# Ensure combat gun equipped; quick-switch to pistol if primary runs dry in close quarters!
-	if weapon_ctrl.current_weapon_id in ["c4", "knife", "hegrenade", "flashbang", "smokegrenade"]:
+	if (weapon_ctrl.is_knife(weapon_ctrl.current_weapon_id) or weapon_ctrl.current_weapon_id in ["c4", "hegrenade", "flashbang", "smokegrenade"]):
 		if not weapon_ctrl.equip_slot(1):
 			weapon_ctrl.equip_slot(2)
 	else:
@@ -656,7 +656,7 @@ func _engage_enemy(delta: float) -> void:
 	elif not crouch_shoot and (_burst_stop_timer <= 0.0 or dist < 6.5):
 		var right := Basis(Vector3.UP, look_yaw).x
 		var fwd_adjust := Vector3.ZERO
-		if wid == "knife":
+		if weapon_ctrl.is_knife(wid):
 			fwd_adjust = -Basis(Vector3.UP, look_yaw).z * 0.95
 		elif dist < 3.6:
 			fwd_adjust = Basis(Vector3.UP, look_yaw).z * 0.45
